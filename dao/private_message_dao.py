@@ -50,7 +50,7 @@ def get_private_messages_with_ids(user1: str, user2: str) -> list:
     """Get messages with IDs for reaction mapping."""
     result = []
     sql = (
-        "SELECT id, sender, message FROM private_messages "
+        "SELECT id, sender, message, sent_at FROM private_messages "
         "WHERE (sender = %s AND receiver = %s) OR (sender = %s AND receiver = %s) "
         "ORDER BY sent_at ASC LIMIT 100"
     )
@@ -58,8 +58,8 @@ def get_private_messages_with_ids(user1: str, user2: str) -> list:
         with get_connection() as conn:
             cur = conn.cursor()
             cur.execute(sql, (user1, user2, user2, user1))
-            for msg_id, sender, message in cur.fetchall():
-                result.append({"id": msg_id, "sender": sender, "message": message})
+            for msg_id, sender, message, sent_at in cur.fetchall():
+                result.append({"id": msg_id, "sender": sender, "message": message, "sent_at": sent_at.isoformat() if sent_at else None})
     except mysql.connector.Error as e:
         print(e)
     return result

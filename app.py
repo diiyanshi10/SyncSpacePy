@@ -102,6 +102,11 @@ def themes(filename):
     return send_from_directory(themes_dir, filename)
 
 
+@app.route("/static/socket.io.min.js", methods=["GET"])
+def socketio_client():
+    return send_from_directory(os.path.join(BASE_DIR, "static"), "socket.io.min.js")
+
+
 # ================================================================
 # POST /login
 # ================================================================
@@ -391,12 +396,17 @@ def create_group():
     group_name = form("groupName")
     passcode = form("passcode")
     admin = form("username")
+    visibility = form("visibility") or "private"
+    description = form("description")[:255]
+    avatar = form("avatar")[:32]
     print(f"[CREATE GROUP] name={group_name} admin={admin}")
 
     if not group_name or not passcode or not admin:
         return fail("Missing fields")
+    if visibility not in {"public", "private"}:
+        return fail("Invalid visibility")
 
-    result = group_dao.create_group(group_name, passcode, admin)
+    result = group_dao.create_group(group_name, passcode, admin, visibility, description, avatar)
     if result == "success":
         return ok()
     return fail(result, 409)
@@ -415,12 +425,15 @@ def join_group():
     username = form("username")
     print(f"[JOIN GROUP] name={group_name}")
 
+    details = group_dao.get_group(group_name)
+    if not details or details.get("archived"):
+        return fail("Group is unavailable", 404)
     # If user is already a member, let them in without passcode
     if group_dao.is_member(group_name, username):
         admin = group_dao.get_admin(group_name)
         return ok({"admin": admin, "alreadyMember": True})
 
-    if group_dao.verify_passcode(group_name, passcode):
+    if details.get("visibility") == "public" or group_dao.verify_passcode(group_name, passcode):
         group_dao.add_member(group_name, username)  # persist membership
         admin = group_dao.get_admin(group_name)
         return ok({"admin": admin, "alreadyMember": False})
@@ -434,6 +447,28 @@ def join_group():
 @app.route("/groups", methods=["GET"])
 def groups():
     return jsonify(group_dao.get_all_groups())
+
+
+@app.route("/groupinfo", methods=["GET"])
+def group_info():
+    group = query("group")
+    details = group_dao.get_group(group) if group else None
+    if not details or details.get("archived"):
+        return fail("Group not found", 404)
+    details.pop("archived", None)
+    return jsonify(details)
+
+
+@app.route("/requestjoin", methods=["POST", "OPTIONS"])
+def request_join():
+    if request.method == "OPTIONS":
+        return "", 204
+    result = group_dao.request_join(form("groupName"), form("username"))
+    if result == "success":
+        return ok()
+    if result == "already_member":
+        return fail("Already a member", 409)
+    return fail("Could not submit join request", 400)
 
 
 # ================================================================
@@ -599,8 +634,63 @@ def group_members():
     if not group:
         return jsonify([])
     members = group_dao.get_members(group)
-    admin = group_dao.get_admin(group)
-    return jsonify([{"username": m, "isAdmin": m == admin} for m in members])
+    return jsonify([{"username": m["username"], "role": m["role"], "isAdmin": m["role"] == "admin"} for m in members])
+
+
+@app.route("/joinrequests", methods=["GET"])
+def join_requests():
+    group = query("group")
+    username = query("username")
+    if not group or not username or username != group_dao.get_admin(group):
+        return fail("Only the group admin can view requests", 403)
+    return jsonify(group_dao.get_join_requests(group))
+
+
+@app.route("/approvejoin", methods=["POST", "OPTIONS"])
+def approve_join():
+    if request.method == "OPTIONS":
+        return "", 204
+    result = group_dao.approve_join(form("groupName"), form("targetUsername"), form("adminUsername"), form("decision") == "approve")
+    if result == "success":
+        return ok()
+    if result == "not_admin":
+        return fail("Only the group admin can approve requests", 403)
+    return fail("Join request not found", 404)
+
+
+@app.route("/setgrouprole", methods=["POST", "OPTIONS"])
+def set_group_role():
+    if request.method == "OPTIONS":
+        return "", 204
+    group = form("groupName")
+    admin = form("adminUsername")
+    target = form("targetUsername")
+    role = form("role")
+    if admin != group_dao.get_admin(group):
+        return fail("Only the group admin can change roles", 403)
+    if target == admin and role != "admin":
+        return fail("The admin role cannot be removed", 400)
+    return ok() if group_dao.set_role(group, target, role) else fail("Role update failed", 400)
+
+
+@app.route("/archivegroup", methods=["POST", "OPTIONS"])
+def archive_group():
+    if request.method == "OPTIONS":
+        return "", 204
+    result = group_dao.archive_group(form("groupName"), form("adminUsername"), form("archived") == "1")
+    if result == "not_admin":
+        return fail("Only the group admin can archive groups", 403)
+    return ok() if result == "success" else fail("Group not found", 404)
+
+
+@app.route("/deletegroup", methods=["POST", "OPTIONS"])
+def delete_group():
+    if request.method == "OPTIONS":
+        return "", 204
+    result = group_dao.delete_group(form("groupName"), form("adminUsername"))
+    if result == "not_admin":
+        return fail("Only the group admin can delete groups", 403)
+    return ok() if result == "success" else fail("Group not found", 404)
 
 
 # ================================================================

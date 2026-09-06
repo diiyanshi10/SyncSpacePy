@@ -4,7 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <title>SyncSpace</title>
-<script async src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+<script src="/static/socket.io.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Pacifico&family=Playfair+Display:wght@700;900&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <style>
 .logo-sync  { font-family:'Pacifico',cursive; font-weight:400; font-style:normal; letter-spacing:0; margin-right:0; }
@@ -263,6 +263,15 @@ input[type="color"] { width:32px; height:28px; border:none; border-radius:6px; c
 .unread-badge { min-width:18px; height:18px; background:var(--accent); color:#fff; border-radius:9px; font-size:.6rem; font-weight:800; display:flex; align-items:center; justify-content:center; padding:0 4px; flex-shrink:0; }
 .sb-div  { height:1px; background:var(--border); margin:4px 11px; }
 .sb-empty { padding:8px 12px 5px; font-size:.77rem; color:var(--text3); font-style:italic; text-align:center; line-height:1.6; }
+.skeleton-list { padding:8px; }
+.skeleton-row { height:48px; margin-bottom:7px; border-radius:var(--r); background:linear-gradient(90deg,var(--surf2) 25%,var(--border) 50%,var(--surf2) 75%); background-size:200% 100%; animation:skeleton-shimmer 1.35s infinite; }
+.skeleton-message { width:58%; height:54px; margin:8px 0; border-radius:14px; background:linear-gradient(90deg,var(--surf2) 25%,var(--border) 50%,var(--surf2) 75%); background-size:200% 100%; animation:skeleton-shimmer 1.35s infinite; }
+.skeleton-message.mine { align-self:flex-end; width:44%; }
+@keyframes skeleton-shimmer { from{background-position:200% 0} to{background-position:-200% 0} }
+.empty-state { display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:170px; padding:24px; text-align:center; color:var(--text2); }
+.empty-state-icon { width:48px; height:48px; display:flex; align-items:center; justify-content:center; border-radius:14px; background:var(--accent-lite); font-size:1.35rem; margin-bottom:9px; }
+.empty-state-title { font-size:.88rem; font-weight:800; color:var(--text); }
+.empty-state-text { max-width:220px; margin-top:4px; font-size:.75rem; line-height:1.5; color:var(--text3); }
 
 /* typing in sidebar */
 .sb-typing { font-size:.7rem; color:var(--accent); font-style:italic; }
@@ -329,7 +338,8 @@ input[type="color"] { width:32px; height:28px; border:none; border-radius:6px; c
 .msg-row.me   .msg-col { align-items:flex-end; }
 .msg-row.them .msg-col { align-items:flex-start; }
 .msg-sender { font-size:.69rem; font-weight:800; color:var(--accent); margin-bottom:2px; padding:0 4px; }
-.msg-bubble { padding:9px 13px; border-radius:16px; font-size:.89rem; line-height:1.55; word-break:break-word; animation:bubIn .14s ease both; transition:background .3s,color .3s; cursor:default; }
+.msg-bubble { padding:9px 13px; border-radius:16px; font-size:.89rem; line-height:1.55; word-break:break-word; animation:none; transition:background .3s,color .3s; cursor:default; }
+.msgs-area.refreshing .msg-bubble { animation:none !important; }
 @keyframes bubIn { from{opacity:0;transform:scale(.96) translateY(4px)} to{opacity:1;transform:none} }
 .msg-row.me   .msg-bubble { background:var(--bub-me);   color:var(--bub-me-t);   border-bottom-right-radius:4px; }
 .msg-row.them .msg-bubble { background:var(--bub-them); color:var(--bub-them-t); border-bottom-left-radius:4px; }
@@ -352,6 +362,45 @@ input[type="color"] { width:32px; height:28px; border:none; border-radius:6px; c
 .reaction-pill .r-count { font-weight:800; font-size:.7rem; color:var(--accent); }
 /* Pinned indicator */
 .msg-pinned-mark { font-size:.62rem; color:var(--accent); opacity:.7; margin-top:2px; padding:0 3px; }
+
+/* ── RESPONSIVE LAYOUT ── */
+@media (max-width: 760px) {
+  .topbar { height:52px; padding-right:6px; }
+  .tb-toggle { width:44px; height:52px; }
+  .tb-brand { padding:0 8px; }
+  .tb-brand-name .logo-sync { font-size:.98rem; }
+  .tb-brand-name .logo-space { font-size:1.08rem; }
+  .acct-uname { display:none; }
+  .acct-pill { padding-right:4px; }
+  .sidebar { position:absolute; inset:52px auto 0 0; width:min(86vw,310px); z-index:180; box-shadow:8px 0 28px rgba(0,0,0,.16); transform:translateX(0); transition:transform .24s ease,opacity .2s; }
+  .sidebar.collapsed { width:min(86vw,310px); opacity:0; transform:translateX(-102%); pointer-events:none; }
+  .app-body { position:relative; }
+  .chat-panel { min-width:0; width:100%; }
+  .chat-header { padding:7px 9px; }
+  .chat-header-left { min-width:0; }
+  .chat-action-btn { padding:5px 7px; font-size:.68rem; }
+  .chat-header #ch-actions .chat-action-btn:nth-child(n+2) { display:none; }
+  .msgs-area { padding:10px 8px; }
+  .msg-col { max-width:86%; }
+  .msg-bubble { padding:8px 11px; font-size:.86rem; }
+  .input-bar { padding:7px 8px; padding-bottom:max(7px,env(safe-area-inset-bottom)); gap:6px; }
+  .input-bar textarea { font-size:.86rem; padding:8px 10px; }
+  .send-btn { width:38px; height:38px; }
+  .chat-welcome { padding:28px 18px; }
+  .w-btn { padding:8px 12px; }
+}
+@media (min-width: 761px) {
+  .sidebar.collapsed { width:0; }
+}
+@media (max-width: 420px) {
+  .tb-brand { gap:4px; }
+  .tb-brand-icon { width:24px; height:24px; }
+  .dark-btn,.notif-btn { width:30px; height:30px; }
+  .chat-header-icon { font-size:1rem; }
+  .chat-header-name { font-size:.85rem; }
+  .chat-header-sub { font-size:.64rem; }
+  .search-icon-btn { width:27px; height:27px; }
+}
 
 /* ── CONTEXT MENU ── */
 #ctx-menu { display:none; position:fixed; z-index:800; background:var(--surface); border:1px solid var(--border); border-radius:14px; box-shadow:0 8px 32px rgba(0,0,0,.22); min-width:190px; overflow:hidden; animation:popIn .18s cubic-bezier(.34,1.56,.64,1) both; }
@@ -479,6 +528,10 @@ input[type="color"] { width:32px; height:28px; border:none; border-radius:6px; c
       <input type="text" id="new-grp-name" placeholder="e.g. 🎮 Gaming Crew" onkeydown="if(event.key==='Enter'){event.preventDefault();grab('new-grp-pass').focus()}"/></div>
     <div class="field"><label>Passcode</label>
       <input type="password" id="new-grp-pass" placeholder="Set a passcode" onkeydown="if(event.key==='Enter'){event.preventDefault();submitCreateGroup()}"/></div>
+    <div class="field"><label>Visibility</label>
+      <select id="new-grp-visibility" style="display:block;width:100%;padding:11px 14px;background:var(--surf2);border:1.5px solid var(--border);border-radius:var(--r);font-size:.92rem;color:var(--text)"><option value="private">Private — passcode required</option><option value="public">Public — anyone can join</option></select></div>
+    <div class="field"><label>Description</label><textarea id="new-grp-description" rows="2" maxlength="255" placeholder="What is this group about?" style="display:block;width:100%;padding:10px 12px;background:var(--surf2);border:1.5px solid var(--border);border-radius:var(--r);font-size:.88rem;color:var(--text);resize:vertical"></textarea></div>
+    <div class="field"><label>Group Avatar</label><input type="text" id="new-grp-avatar" maxlength="4" placeholder="e.g. 🎮"/></div>
     <button class="btn-primary" onclick="submitCreateGroup()">Create Group →</button>
     <button class="btn-ghost" onclick="closeModal('create-modal')">Cancel</button>
     <div class="modal-error" id="create-err"></div>
@@ -826,6 +879,7 @@ const body = document.body;
 let currentUser = null, currentChat = null, pendingGroup = null;
 let currentProfile = {full_name:'', avatar:'', bio:'', status_message:''};
 let pollTimer = null, activeDMs = [], sidebarOpen = true;
+const REALTIME_FALLBACK_MS = 2000;
 let realtimeSocket = null;
 let myGroups = []; // persisted list of joined groups
 let isDark = false, currentAccent = 'autumn', currentWallpaper = 'none', customBgDataUrl = null;
@@ -874,7 +928,7 @@ function handleRealtimeMessage(data){
   if(data.type==='group'){
     const isCurrent=currentChat?.type==='group' && currentChat.name===data.group;
     if(data.sender!==currentUser) notifyForMessage(data, data.group, isCurrent);
-    if(isCurrent) fetchGMsgs();
+    if(isCurrent) fetchGMsgs(true);
     else if(data.sender!==currentUser){ unreadCounts[data.group]=(unreadCounts[data.group]||0)+1; renderMyGroups(myGroups); beep(); }
     return;
   }
@@ -883,7 +937,7 @@ function handleRealtimeMessage(data){
     if(!activeDMs.includes(other)){ activeDMs.push(other); saveDMs(); }
     const isCurrent=currentChat?.type==='dm' && currentChat.name===other;
     if(data.sender!==currentUser) notifyForMessage(data, other, isCurrent);
-    if(isCurrent) fetchDMsgs();
+    if(isCurrent) fetchDMsgs(true);
     else if(data.sender!==currentUser){ const key='dm_'+other; unreadCounts[key]=(unreadCounts[key]||0)+1; renderDMs(); beep(); }
   }
 }
@@ -1275,7 +1329,7 @@ function doLogout(){
 async function loadSidebar(){
   loadDMs(); // restore saved DMs first so they show immediately
   loadRemovedDMs();
-  renderDMs();
+  renderDMs(true);
   try{
     const [rMine,rAll]=await Promise.all([fetch('/mygroups?username='+encodeURIComponent(currentUser)),fetch('/groups')]);
     myGroups=await rMine.json(); const allGroups=await rAll.json();
@@ -1355,9 +1409,10 @@ async function pollOtherChats(){
   }catch(e){ console.error('pollOtherChats', e); }
 }
 function isEmoji(ch){ try{ return /\p{Emoji_Presentation}/u.test(ch); }catch{ return false; } }
-function renderMyGroups(gs){
+function renderMyGroups(gs,loading=false){
   const el=grab('sb-groups');
-  if(!gs||!gs.length){ el.innerHTML='<div class="sb-empty">No groups yet — hit ＋ to create one!</div>'; updateNotificationUi(); return; }
+  if(loading){ el.innerHTML='<div class="skeleton-list"><div class="skeleton-row"></div><div class="skeleton-row"></div><div class="skeleton-row"></div></div>'; return; }
+  if(!gs||!gs.length){ el.innerHTML='<div class="empty-state"><div class="empty-state-icon">👥</div><div class="empty-state-title">No groups yet</div><div class="empty-state-text">Create a group or discover a public space to get started.</div></div>'; updateNotificationUi(); return; }
   el.innerHTML='';
   gs.forEach(g=>{
     const item=document.createElement('div');
@@ -1374,19 +1429,20 @@ function renderMyGroups(gs){
 }
 function renderDiscover(gs){
   const el=grab('sb-discover');
-  if(!gs||!gs.length){ el.innerHTML='<div class="sb-empty">No other groups.</div>'; return; }
+  if(!gs||!gs.length){ el.innerHTML='<div class="empty-state" style="min-height:90px"><div class="empty-state-title">No public groups</div><div class="empty-state-text">Public groups will appear here.</div></div>'; return; }
   el.innerHTML='';
   gs.forEach(g=>{
     const item=document.createElement('div'); item.className='sb-item'; item.dataset.name=g;
     const ch=g.charAt(0),em=isEmoji(ch);
     item.innerHTML=`<div class="sb-av" style="opacity:.5;${em?'font-size:1.05rem;background:var(--surf2);color:var(--text);':''}">${em?ch:ch.toUpperCase()}</div>
-      <div class="sb-info"><div class="sb-name" style="opacity:.7">${esc(g)}</div><div class="sb-sub">Tap to join</div></div>`;
-    item.onclick=()=>tryEnterGroup(g); el.appendChild(item);
+      <div class="sb-info"><div class="sb-name" style="opacity:.7">${esc(g)}</div><div class="sb-sub">Public group · tap to join</div></div>`;
+    item.onclick=()=>requestGroupJoin(g); el.appendChild(item);
   });
 }
-function renderDMs(){
+function renderDMs(loading=false){
   const el=grab('sb-dms');
-  if(!activeDMs.length){ el.innerHTML='<div class="sb-empty">No DMs yet — hit ＋!</div>'; updateNotificationUi(); return; }
+  if(loading){ el.innerHTML='<div class="skeleton-list"><div class="skeleton-row"></div><div class="skeleton-row"></div></div>'; return; }
+  if(!activeDMs.length){ el.innerHTML='<div class="empty-state"><div class="empty-state-icon">💬</div><div class="empty-state-title">No direct messages</div><div class="empty-state-text">Start a private conversation with someone from the plus button.</div></div>'; updateNotificationUi(); return; }
   el.innerHTML='';
   activeDMs.forEach(u=>{
     const item=document.createElement('div');
@@ -1428,8 +1484,17 @@ async function submitPasscode(){
     else{ grab('passcode-err').textContent='❌ Wrong passcode.'; grab('passcode-input').value=''; grab('passcode-input').focus(); }
   }catch(e){ grab('passcode-err').textContent='Server error.'; }
 }
+async function requestGroupJoin(name){
+  try{
+    const r=await fetch('/joingroup',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'groupName='+encodeURIComponent(name)+'&passcode=&username='+encodeURIComponent(currentUser)});
+    const d=await r.json();
+    if(d.status==='success'){ groupAdmins[name]=d.admin; toast('Joined "'+name+'" ✓'); await loadSidebar(); openGroup(name); }
+    else toast(d.message||'Could not join group.');
+  }catch(e){ toast('Server error while requesting access.'); }
+}
 async function openGroup(name){
   stopTyping();
+  if(window.innerWidth<=760 && sidebarOpen) toggleSidebar();
   currentChat={type:'group',name}; lastMsgCount=0; clearInterval(pollTimer);
   delete unreadCounts[name];
     updateNotificationUi();
@@ -1441,38 +1506,43 @@ async function openGroup(name){
   renderChatHeader('🏠',name,'Group Chat',true,groupAdmins[name]===currentUser);
   updatePinBanner(name);
   joinRealtimeChat('group',name);
-  fetchGMsgs(); pollTimer=setInterval(()=>{ fetchGMsgs(); },30000);
+  fetchGMsgs(); pollTimer=setInterval(()=>{ fetchGMsgs(true); },REALTIME_FALLBACK_MS);
 }
-async function fetchGMsgs(){
+async function fetchGMsgs(skipSidebar=false){
   if(!currentChat||currentChat.type!=='group') return;
   try{
+    if(!grab('msgs-area').children.length) renderMessageSkeleton(grab('msgs-area'));
     const r=await fetch('/messages?group='+encodeURIComponent(currentChat.name));
     const ms=await r.json();
     const prevCount = lastMsgCount;
     lastMsgCount = ms.length;
     groupLastCounts[currentChat.name] = ms.length;
 
-    if(ms.length !== prevCount){
+    if(ms.length !== prevCount || (prevCount===0 && !grab('msgs-area').querySelector('.msg-row'))){
       if(prevCount > 0 && ms.length > prevCount){ beep(); }
+      const area=grab('msgs-area'); if(prevCount>0) area.classList.add('refreshing');
       renderMsgs(ms);
       await fetchReactionsForCurrentChat(ms);
+      requestAnimationFrame(()=>area.classList.remove('refreshing'));
     }
 
     // mark open group as read
     delete unreadCounts[currentChat.name];
     renderMyGroups(myGroups);
-    await pollOtherChats();
+    if(!skipSidebar) await pollOtherChats();
   }catch(e){ console.error('fetchGMsgs', e); }
 }
 async function submitCreateGroup(){
   const name=grab('new-grp-name').value.trim(), pass=grab('new-grp-pass').value;
+  const visibility=grab('new-grp-visibility').value, description=grab('new-grp-description').value.trim(), avatar=grab('new-grp-avatar').value.trim();
   const errEl=grab('create-err'); errEl.textContent='';
   if(!name){ errEl.textContent='Please enter a group name.'; return; }
   if(!pass){ errEl.textContent='Please set a passcode.'; return; }
   try{
-    const r=await fetch('/creategroup',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'groupName='+encodeURIComponent(name)+'&passcode='+encodeURIComponent(pass)+'&username='+encodeURIComponent(currentUser)});
+    const body='groupName='+encodeURIComponent(name)+'&passcode='+encodeURIComponent(pass)+'&username='+encodeURIComponent(currentUser)+'&visibility='+encodeURIComponent(visibility)+'&description='+encodeURIComponent(description)+'&avatar='+encodeURIComponent(avatar);
+    const r=await fetch('/creategroup',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
     const d=await r.json();
-    if(d.status==='success'){ grab('new-grp-name').value=''; grab('new-grp-pass').value=''; closeModal('create-modal'); groupAdmins[name]=currentUser; toast('"'+name+'" created! 🎉'); await loadSidebar(); openGroup(name); }
+    if(d.status==='success'){ grab('new-grp-name').value=''; grab('new-grp-pass').value=''; grab('new-grp-description').value=''; grab('new-grp-avatar').value=''; closeModal('create-modal'); groupAdmins[name]=currentUser; toast('"'+name+'" created! 🎉'); await loadSidebar(); openGroup(name); }
     else errEl.textContent='❌ '+(d.message||'Failed.');
   }catch(e){ errEl.textContent='Server error.'; }
 }
@@ -1494,7 +1564,7 @@ async function openMembersModal(groupName,isAdmin){
     grab('member-list-el').innerHTML='';
     members.forEach(m=>{
       const row=document.createElement('div'); row.className='member-item';
-      row.innerHTML='<div class="member-av">'+m.username.charAt(0).toUpperCase()+'</div><span class="member-name">'+esc(m.username)+'</span>'+(m.isAdmin?'<span class="member-badge">Admin</span>':'')+(isAdmin&&!m.isAdmin?'<button class="member-kick" onclick="removeMember(\''+esc(groupName)+'\',\''+esc(m.username)+'\')">✕</button>':'');
+      row.innerHTML='<div class="member-av">'+m.username.charAt(0).toUpperCase()+'</div><span class="member-name">'+esc(m.username)+'</span><span class="member-badge">'+esc(m.role||'user')+'</span>'+(isAdmin&&m.username!==currentUser?'<button class="member-kick" title="Promote or demote" onclick="toggleMemberRole(\''+esc(groupName)+'\',\''+esc(m.username)+'\',\''+(m.role==='moderator'?'user':'moderator')+'\')">↕</button><button class="member-kick" onclick="removeMember(\''+esc(groupName)+'\',\''+esc(m.username)+'\')">✕</button>':'');
       grab('member-list-el').appendChild(row);
     });
   }catch(e){ grab('member-list-el').innerHTML='<div style="padding:14px;text-align:center;color:var(--text3)">Error.</div>'; }
@@ -1516,6 +1586,15 @@ async function removeMember(groupName,targetUsername){
     if(d.status==='success'){ toast('Removed '+targetUsername); closeModal('members-modal'); openMembersModal(groupName,true); }
     else toast('❌ '+d.message);
   }catch(e){ toast('Server error.'); }
+}
+async function toggleMemberRole(groupName,targetUsername,role){
+  const body='groupName='+encodeURIComponent(groupName)+'&adminUsername='+encodeURIComponent(currentUser)+'&targetUsername='+encodeURIComponent(targetUsername)+'&role='+encodeURIComponent(role);
+  try{
+    const r=await fetch('/setgrouprole',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    const d=await r.json();
+    if(d.status==='success'){ toast(targetUsername+' is now '+role); openMembersModal(groupName,true); }
+    else toast(d.message||'Could not update role.');
+  }catch(e){ toast('Server error while updating role.'); }
 }
 function openRenameGroupModal(groupName){
   grab('rename-group-input').value=groupName;
@@ -1581,11 +1660,29 @@ function renderChatHeader(icon,name,sub,isGroup,isAdmin){
     ib.onclick=()=>openInviteMemberModal(name); actions.appendChild(ib);
     const cb=document.createElement('button'); cb.className='chat-action-btn danger'; cb.textContent='🗑️ Clear';
     cb.onclick=()=>clearGroupChat(name); actions.appendChild(cb);
+    if(isAdmin){
+      const ab=document.createElement('button'); ab.className='chat-action-btn'; ab.textContent='📦 Archive';
+      ab.onclick=()=>archiveCurrentGroup(name); actions.appendChild(ab);
+      const db=document.createElement('button'); db.className='chat-action-btn danger'; db.textContent='Delete';
+      db.onclick=()=>deleteCurrentGroup(name); actions.appendChild(db);
+    }
     if(!isAdmin){ const lb=document.createElement('button'); lb.className='chat-action-btn danger'; lb.textContent='Leave'; lb.onclick=()=>leaveGroup(name); actions.appendChild(lb); }
   } else {
     const cd=document.createElement('button'); cd.className='chat-action-btn danger'; cd.textContent='🗑️ Clear';
     cd.onclick=()=>clearDMChat(name); actions.appendChild(cd);
   }
+}
+async function archiveCurrentGroup(groupName){
+  if(!confirm('Archive "'+groupName+'"? Members will keep access, but it will leave group discovery.')) return;
+  const body='groupName='+encodeURIComponent(groupName)+'&adminUsername='+encodeURIComponent(currentUser)+'&archived=1';
+  const r=await fetch('/archivegroup',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+  const d=await r.json(); if(d.status==='success'){ toast('Group archived.'); await loadSidebar(); } else toast(d.message||'Archive failed.');
+}
+async function deleteCurrentGroup(groupName){
+  if(!confirm('Delete "'+groupName+'" permanently? This cannot be undone.')) return;
+  const body='groupName='+encodeURIComponent(groupName)+'&adminUsername='+encodeURIComponent(currentUser);
+  const r=await fetch('/deletegroup',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+  const d=await r.json(); if(d.status==='success'){ toast('Group deleted.'); currentChat=null; resetChat(); await loadSidebar(); } else toast(d.message||'Delete failed.');
 }
 
 async function clearGroupChat(groupName){
@@ -1618,6 +1715,7 @@ async function clearDMChat(other){
 /* ── DM FLOW ─────────────────────────────────────── */
 function openDM(user){
   stopTyping();
+  if(window.innerWidth<=760 && sidebarOpen) toggleSidebar();
   currentChat={type:'dm',name:user}; lastMsgCount=0;
   delete unreadCounts['dm_'+user];
     updateNotificationUi();
@@ -1626,7 +1724,7 @@ function openDM(user){
   clearInterval(pollTimer); showChat(); hiliteItem('dm',user);
   renderChatHeader('👤',user,'Direct Message',false,false);
   updatePinBanner('dm_'+user);
-  fetchDMsgs(); pollTimer=setInterval(fetchDMsgs,30000);
+  fetchDMsgs(); pollTimer=setInterval(()=>{ fetchDMsgs(true); },REALTIME_FALLBACK_MS);
 }
 
 function removeDM(user){
@@ -1641,24 +1739,27 @@ function removeDM(user){
   renderDMs();
 }
 
-async function fetchDMsgs(){
+async function fetchDMsgs(skipSidebar=false){
   if(!currentChat||currentChat.type!=='dm') return;
   try{
+    if(!grab('msgs-area').children.length) renderMessageSkeleton(grab('msgs-area'));
     const r=await fetch('/privatemessages?user1='+encodeURIComponent(currentUser)+'&user2='+encodeURIComponent(currentChat.name));
     const ms=await r.json();
     const prev=lastMsgCount;
     lastMsgCount=ms.length;
     dmLastCounts['dm_'+currentChat.name] = ms.length;
 
-    if(ms.length!==prev){
+    if(ms.length!==prev || (prev===0 && !grab('msgs-area').querySelector('.msg-row'))){
       if(prev>0&&ms.length>prev) beep();
+      const area=grab('msgs-area'); if(prev>0) area.classList.add('refreshing');
       renderMsgs(ms);
       await fetchReactionsForCurrentChat(ms);
+      requestAnimationFrame(()=>area.classList.remove('refreshing'));
     }
 
     delete unreadCounts['dm_'+currentChat.name];
     renderDMs();
-    await pollOtherChats();
+    if(!skipSidebar) await pollOtherChats();
   }catch(e){ console.error('fetchDMsgs', e); }
 }
 async function openDmModal(){
@@ -1690,22 +1791,33 @@ async function sendMessage(){
   const fakeMsgKey=currentUser+':'+(Math.random().toString(36).substr(2,9));
   unsent.add(fakeMsgKey);
   saveUnsent();
+  appendOptimisticMessage(text,fakeMsgKey);
   
   try{
     const chatKey=currentChat.type==='group'?currentChat.name:'dm_'+currentChat.name;
     if(currentChat.type==='group'){
       await fetch('/send',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'username='+encodeURIComponent(currentUser)+'&message='+encodeURIComponent(text)+'&group='+encodeURIComponent(currentChat.name)});
       unsent.delete(fakeMsgKey); saveUnsent();
-      await fetchGMsgs();
+      await fetchGMsgs(true);
     }else{
       await fetch('/sendprivate',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'sender='+encodeURIComponent(currentUser)+'&receiver='+encodeURIComponent(currentChat.name)+'&message='+encodeURIComponent(text)});
       unsent.delete(fakeMsgKey); saveUnsent();
-      await fetchDMsgs();
+      await fetchDMsgs(true);
     }
   }catch(e){ toast('Failed to send. Check your connection.'); }
 }
 function handleMsgKey(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendMessage(); } }
 function autoGrow(el){ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,110)+'px'; }
+function appendOptimisticMessage(text,msgKey){
+  const area=grab('msgs-area');
+  if(!area||!currentChat) return;
+  area.querySelector('.empty-state')?.remove();
+  const row=document.createElement('div'); row.className='msg-row me'; row.dataset.msgkey=msgKey;
+  const stamp=new Date();
+  const time=stamp.getHours().toString().padStart(2,'0')+':'+stamp.getMinutes().toString().padStart(2,'0');
+  row.innerHTML='<div class="msg-col"><div class="msg-bubble unsent"><i>Sending…</i></div><div class="msg-meta"><span class="msg-time">'+time+'</span><span class="msg-tick">✓</span></div></div>';
+  area.appendChild(row); area.scrollTop=area.scrollHeight;
+}
 function handleTyping(){
   const now=Date.now();
   if(now-lastTypingMsg>=1000) { emitTyping(true); lastTypingMsg=now; }
@@ -1767,7 +1879,7 @@ function ctxAction(action){
   } else if(action==='unsend'){
     if(!isMe){ toast('You can only unsend your own messages.'); closeCtxMenu(); return; }
     unsent.add(key); saveUnsent();
-    if(currentChat.type==='group') fetchGMsgs(); else fetchDMsgs();
+    if(currentChat.type==='group') fetchGMsgs(true); else fetchDMsgs(true);
     toast('Message unsent 🗑️');
   }
   closeCtxMenu();
@@ -1887,9 +1999,23 @@ async function fetchReactionsForCurrentChat(messages){
 let lpTimer=null;
 function onMsgTouchStart(e,msgKey,sender,text,isMe){ lpTimer=setTimeout(()=>openCtxMenu(e,msgKey,sender,text,isMe),500); }
 function onMsgTouchEnd(){ clearTimeout(lpTimer); }
+function renderMessageSkeleton(area){
+  area.innerHTML='<div class="skeleton-message"></div><div class="skeleton-message mine"></div><div class="skeleton-message"></div><div class="skeleton-message mine"></div>';
+}
+function formatDateLabel(value){
+  if(!value) return 'Today';
+  const date=new Date(value), now=new Date();
+  const start=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const day=new Date(date.getFullYear(),date.getMonth(),date.getDate());
+  const diff=Math.round((start-day)/86400000);
+  if(diff===0) return 'Today';
+  if(diff===1) return 'Yesterday';
+  return date.toLocaleDateString(undefined,{weekday:'short',month:'short',day:'numeric',year:date.getFullYear()===now.getFullYear()?undefined:'numeric'});
+}
 
 function renderMsgs(msgs){
   const area=grab('msgs-area'); if(!area) return;
+  if(!msgs.length){ area.innerHTML='<div class="empty-state"><div class="empty-state-icon">💬</div><div class="empty-state-title">No messages yet</div><div class="empty-state-text">Be the first to start the conversation.</div></div>'; return; }
   const atBot=area.scrollHeight-area.scrollTop-area.clientHeight<120;
   area.innerHTML='';
   
@@ -1910,16 +2036,18 @@ function renderMsgs(msgs){
     const isMe = sender === currentUser;
     const isUnsent = unsent.has(msgKey);
 
-    // Date separator (show once, "Today")
-    if(i===0){
+    // Group messages by their server timestamp, with a fallback for legacy data.
+    const dateLabel=formatDateLabel(m.sent_at);
+    const previousLabel=i>0?formatDateLabel(normalizedMsgs[i-1].sent_at):null;
+    if(i===0 || dateLabel!==previousLabel){
       const sep=document.createElement('div'); sep.className='date-sep';
-      sep.innerHTML='<span>Today</span>'; area.appendChild(sep);
+      sep.innerHTML='<span>'+esc(dateLabel)+'</span>'; area.appendChild(sep);
     }
 
     const prev=i>0?normalizedMsgs[i-1].sender:null;
     const showName=!isMe&&sender!==prev;
-    const now=new Date();
-    const timeStr=now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0');
+    const stamp=m.sent_at?new Date(m.sent_at):new Date();
+    const timeStr=stamp.getHours().toString().padStart(2,'0')+':'+stamp.getMinutes().toString().padStart(2,'0');
 
     // Parse reply quote if present
     let displayText=rawText, replyQuoteHtml='';

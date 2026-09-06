@@ -39,15 +39,15 @@ def get_messages_with_ids(group_name: str) -> list:
     """
     result = []
     sql = (
-        "SELECT id, sender, message FROM messages "
+        "SELECT id, sender, message, sent_at FROM messages "
         "WHERE group_name = %s ORDER BY sent_at ASC LIMIT 50"
     )
     try:
         with get_connection() as conn:
             cur = conn.cursor()
             cur.execute(sql, (group_name,))
-            for msg_id, sender, message in cur.fetchall():
-                result.append({"id": msg_id, "sender": sender, "message": message})
+            for msg_id, sender, message, sent_at in cur.fetchall():
+                result.append({"id": msg_id, "sender": sender, "message": message, "sent_at": sent_at.isoformat() if sent_at else None})
     except mysql.connector.Error as e:
         print(e)
     return result
