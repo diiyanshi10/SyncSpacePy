@@ -32,9 +32,10 @@ ALL ROUTES (unchanged from the Java version so index.html works as-is):
 """
 import os
 import socket
+from datetime import datetime, timezone
 
 from flask import Flask, request, jsonify, send_from_directory, Response
-from flask_socketio import SocketIO, join_room, leave_room
+from flask_socketio import SocketIO, emit, join_room, leave_room
 
 import db
 from dao import group_dao, message_dao, private_message_dao, reaction_dao, user_dao
@@ -43,6 +44,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__, static_folder=None)
 socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
+presence_users = {}
+presence_sids = {}
 
 
 # ================================================================
@@ -386,8 +389,83 @@ def send_private():
 @socketio.on("session:join")
 def socket_session_join(data):
     username = (data or {}).get("username", "").strip()
+    if not username:
+        return
+
+    sid = request.sid
+    previous_user = presence_sids.get(sid)
+    if previous_user and previous_user != username:
+        _remove_presence_sid(previous_user, sid)
+
+    join_room(f"user:{username}")
+    presence_sids[sid] = username
+    user = presence_users.setdefault(username, {"sids": set(), "status": "online", "lastSeen": None})
+    user["sids"].add(sid)
+    user["status"] = "online"
+    user["lastSeen"] = None
+    emit("presence:state", _presence_snapshot())
+    socketio.emit("presence:update", _presence_payload(username), skip_sid=sid)
+
+
+@socketio.on("presence:activity")
+def socket_presence_activity(data):
+    username = presence_sids.get(request.sid)
+    status = (data or {}).get("status", "online")
+    if not username or status not in {"online", "away", "busy"}:
+        return
+    user = presence_users.get(username)
+    if not user:
+        return
+    user["status"] = status
+    user["lastSeen"] = None
+    socketio.emit("presence:update", _presence_payload(username))
+
+
+@socketio.on("typing:update")
+def socket_typing_update(data):
+    username = presence_sids.get(request.sid)
+    chat_type = (data or {}).get("type")
+    name = (data or {}).get("name", "").strip()
+    is_typing = bool((data or {}).get("isTyping"))
+    if not username or not name or chat_type not in {"group", "dm"}:
+        return
+
+    payload = {"type": chat_type, "name": name, "username": username, "isTyping": is_typing}
+    if chat_type == "group":
+        socketio.emit("typing:update", payload, to=f"group:{name}", skip_sid=request.sid)
+    else:
+        socketio.emit("typing:update", payload, to=f"user:{name}", skip_sid=request.sid)
+
+
+@socketio.on("disconnect")
+def socket_disconnect():
+    username = presence_sids.pop(request.sid, None)
     if username:
-        join_room(f"user:{username}")
+        _remove_presence_sid(username, request.sid)
+
+
+def _presence_payload(username):
+    user = presence_users.get(username, {})
+    return {
+        "username": username,
+        "status": user.get("status", "offline") if user.get("sids") else "offline",
+        "lastSeen": user.get("lastSeen"),
+    }
+
+
+def _presence_snapshot():
+    return {username: _presence_payload(username) for username in presence_users}
+
+
+def _remove_presence_sid(username, sid):
+    user = presence_users.get(username)
+    if not user:
+        return
+    user["sids"].discard(sid)
+    if not user["sids"]:
+        user["status"] = "offline"
+        user["lastSeen"] = datetime.now(timezone.utc).isoformat()
+        socketio.emit("presence:update", _presence_payload(username))
 
 
 @socketio.on("chat:join")

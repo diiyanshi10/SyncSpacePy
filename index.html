@@ -160,6 +160,9 @@ body.has-wallpaper .msgs-area   { background:transparent; }
 .tb-right { display:flex; align-items:center; gap:4px; margin-left:auto; }
 .dark-btn { width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:.93rem; transition:background var(--ease); }
 .dark-btn:hover { background:var(--surf2); }
+.notif-btn { position:relative; width:34px; height:34px; border-radius:50%; display:flex; align-items:center; justify-content:center; color:var(--text2); font-size:.93rem; transition:background var(--ease); }
+.notif-btn:hover { background:var(--surf2); }
+.notif-count { position:absolute; top:-2px; right:-2px; min-width:16px; height:16px; padding:0 4px; border-radius:9px; background:var(--danger); color:#fff; font-size:.58rem; font-weight:800; display:none; align-items:center; justify-content:center; border:2px solid var(--surface); }
 .acct-pill { display:flex; align-items:center; gap:6px; background:var(--surf2); border:1.5px solid var(--border); border-radius:30px; padding:3px 10px 3px 3px; cursor:pointer; position:relative; transition:border-color var(--ease); }
 .acct-pill:hover { border-color:var(--accent); }
 .acct-av { width:27px; height:27px; border-radius:50%; background:var(--accent); color:#fff; font-size:.72rem; font-weight:800; display:flex; align-items:center; justify-content:center; flex-shrink:0; transition:background .3s; }
@@ -645,6 +648,14 @@ input[type="color"] { width:32px; height:28px; border:none; border-radius:6px; c
         <input type="checkbox" id="notif-desktop" checked style="cursor:pointer;width:16px;height:16px"/>
         <span>Desktop notifications</span>
       </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;font-weight:600;margin-top:6px">
+        <input type="checkbox" id="notif-mentions" checked style="cursor:pointer;width:16px;height:16px"/>
+        <span>Notify for mentions</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:.85rem;font-weight:600;margin-top:6px">
+        <input type="checkbox" id="notif-replies" checked style="cursor:pointer;width:16px;height:16px"/>
+        <span>Notify for replies</span>
+      </label>
     </div>
     <div style="font-size:.76rem;color:var(--text2);line-height:1.6">Your session is saved in this browser. <a onclick="doLogout()" style="color:var(--danger);cursor:pointer;font-weight:700">Sign out all devices</a> if you suspect unauthorized access.</div>
   </div>
@@ -673,6 +684,7 @@ input[type="color"] { width:32px; height:28px; border:none; border-radius:6px; c
     </div>
     <div class="tb-right">
       <button class="dark-btn" id="dark-btn" onclick="cycleDark()">🌙</button>
+      <button class="notif-btn" id="notif-btn" onclick="openNotificationSettings()" title="Notification settings">🔔<span class="notif-count" id="notif-count">0</span></button>
       <div class="acct-pill" onclick="toggleAcct(event)">
         <div class="acct-av" id="acct-av">?</div>
         <span class="acct-uname" id="acct-uname">—</span>
@@ -793,9 +805,10 @@ let isDark = false, currentAccent = 'autumn', currentWallpaper = 'none', customB
 let lastMsgCount = 0, groupAdmins = {};
 let reactions = {}, unsent = new Set(), pinned = {};
 let replyTo = null;
-let notifSound = true, notifDesktop = true;
+let notifSound = true, notifDesktop = true, notifMentions = true, notifReplies = true;
 let ctxMsg = null;
 let typingTimer = null, lastTypingMsg = 0;
+let presenceByUser = {}, typingUsers = {}, activityStatus = 'online';
 let unreadCounts = {};
 let groupLastCounts = {};
 let dmLastCounts = {};
@@ -808,10 +821,22 @@ function setupRealtime(){
   realtimeSocket = io();
   realtimeSocket.on('connect',()=>{ if(currentUser) joinRealtimeSession(); });
   realtimeSocket.on('message:new', handleRealtimeMessage);
+  realtimeSocket.on('presence:state', state=>{
+    presenceByUser=state||{};
+    renderDMs(); updateHeaderPresence();
+  });
+  realtimeSocket.on('presence:update', data=>{
+    if(data?.username){ presenceByUser[data.username]=data; renderDMs(); updateHeaderPresence(); }
+  });
+  realtimeSocket.on('typing:update', handleTypingUpdate);
+  document.addEventListener('visibilitychange', updatePresenceActivity);
+  window.addEventListener('focus', updatePresenceActivity);
+  window.addEventListener('blur', updatePresenceActivity);
 }
 function joinRealtimeSession(){
   if(!realtimeSocket?.connected || !currentUser) return;
   realtimeSocket.emit('session:join',{username:currentUser});
+  realtimeSocket.emit('presence:activity',{status:activityStatus});
   myGroups.forEach(group=>realtimeSocket.emit('chat:join',{type:'group',name:group}));
 }
 function joinRealtimeChat(type,name){
@@ -820,16 +845,105 @@ function joinRealtimeChat(type,name){
 function handleRealtimeMessage(data){
   if(!currentUser || !data) return;
   if(data.type==='group'){
-    if(currentChat?.type==='group' && currentChat.name===data.group) fetchGMsgs();
-    else { unreadCounts[data.group]=(unreadCounts[data.group]||0)+1; renderMyGroups(myGroups); beep(); }
+    const isCurrent=currentChat?.type==='group' && currentChat.name===data.group;
+    if(data.sender!==currentUser) notifyForMessage(data, data.group, isCurrent);
+    if(isCurrent) fetchGMsgs();
+    else if(data.sender!==currentUser){ unreadCounts[data.group]=(unreadCounts[data.group]||0)+1; renderMyGroups(myGroups); beep(); }
     return;
   }
   if(data.type==='dm'){
     const other=data.sender===currentUser?data.receiver:data.sender;
     if(!activeDMs.includes(other)){ activeDMs.push(other); saveDMs(); }
-    if(currentChat?.type==='dm' && currentChat.name===other) fetchDMsgs();
-    else { const key='dm_'+other; unreadCounts[key]=(unreadCounts[key]||0)+1; renderDMs(); beep(); }
+    const isCurrent=currentChat?.type==='dm' && currentChat.name===other;
+    if(data.sender!==currentUser) notifyForMessage(data, other, isCurrent);
+    if(isCurrent) fetchDMsgs();
+    else if(data.sender!==currentUser){ const key='dm_'+other; unreadCounts[key]=(unreadCounts[key]||0)+1; renderDMs(); beep(); }
   }
+}
+function updateNotificationUi(){
+  const total=Object.values(unreadCounts).reduce((sum,count)=>sum+Number(count||0),0);
+  const badge=grab('notif-count');
+  if(badge){ badge.textContent=total>99?'99+':String(total); badge.style.display=total?'flex':'none'; }
+  document.title=total?'('+ (total>99?'99+':total) +') SyncSpace':'SyncSpace';
+}
+function escapeRegExp(value){ return String(value).replace(/[.*+?^${}()|[\]\\]/g,'\\$&'); }
+function messageNotificationInfo(data){
+  const text=String(data.message||'');
+  const mention=new RegExp('(^|\\s)@'+escapeRegExp(currentUser)+'\\b','i').test(text);
+  const reply=text.match(/^\[↩\s*([^:]+):/);
+  const isReply=Boolean(reply&&reply[1].trim().toLowerCase()===currentUser.toLowerCase());
+  return {mention,isReply};
+}
+function notifyForMessage(data, chatName, isCurrent){
+  const info=messageNotificationInfo(data);
+  const special=(info.mention&&notifMentions)||(info.isReply&&notifReplies);
+  const shouldAlert=special||document.visibilityState==='hidden'||!document.hasFocus()||!isCurrent;
+  if(!shouldAlert||!notifDesktop||typeof Notification==='undefined') return;
+  if(Notification.permission!=='granted') return;
+  const kind=info.isReply?'Reply':info.mention?'Mention':'New message';
+  const notification=new Notification(kind+' from '+data.sender,{body:String(data.message||'').replace(/^\[↩[^\n]*\]\n/,'').substring(0,140),tag:'syncspace-'+data.type+'-'+chatName,renotify:true});
+  notification.onclick=()=>{ window.focus(); data.type==='group'?openGroup(chatName):openDM(chatName); notification.close(); };
+}
+async function requestNotificationPermission(){
+  if(typeof Notification==='undefined'){ toast('Browser notifications are not supported here.'); return; }
+  if(Notification.permission==='default'){
+    const permission=await Notification.requestPermission();
+    if(permission==='granted') toast('Browser notifications enabled.');
+  } else if(Notification.permission==='denied') toast('Notifications are blocked in your browser settings.');
+}
+  function openNotificationSettings(){ openSettings('profile'); if(notifDesktop) requestNotificationPermission(); }
+function presenceLabel(username){
+  const p=presenceByUser[username]||{};
+  if(p.status==='online') return 'Online';
+  if(p.status==='away') return 'Away';
+  if(p.status==='busy') return 'Busy';
+  if(!p.lastSeen) return 'Offline';
+  const seen=new Date(p.lastSeen), diff=Math.max(0,Date.now()-seen.getTime());
+  if(diff<60000) return 'Last seen just now';
+  if(diff<3600000) return 'Last seen '+Math.floor(diff/60000)+'m ago';
+  if(diff<86400000) return 'Last seen '+Math.floor(diff/3600000)+'h ago';
+  return 'Last seen '+seen.toLocaleDateString();
+}
+function updateHeaderPresence(){
+  if(currentChat?.type==='dm') grab('ch-sub').textContent=presenceLabel(currentChat.name);
+}
+function updatePresenceActivity(){
+  if(!currentUser) return;
+  const nextStatus=document.visibilityState==='hidden'||!document.hasFocus()?'away':'online';
+  if(nextStatus===activityStatus && !realtimeSocket?.connected) return;
+  activityStatus=nextStatus;
+  if(realtimeSocket?.connected) realtimeSocket.emit('presence:activity',{status:activityStatus});
+}
+function handleTypingUpdate(data){
+  if(!currentUser || !data || data.username===currentUser) return;
+  const isCurrent=data.type==='group'
+    ? currentChat?.type==='group'&&currentChat.name===data.name
+    : currentChat?.type==='dm'&&currentChat.name===data.username;
+  if(!isCurrent) return;
+  const key=data.type==='group'?data.name:'dm_'+data.username;
+  if(!typingUsers[key]) typingUsers[key]=new Set();
+  if(data.isTyping) typingUsers[key].add(data.username);
+  else typingUsers[key].delete(data.username);
+  clearTimeout(typingUsers[key].timer);
+  if(data.isTyping) typingUsers[key].timer=setTimeout(()=>{
+    typingUsers[key].delete(data.username); renderTyping(key);
+  },3500);
+  renderTyping(key);
+}
+function renderTyping(key){
+  const users=typingUsers[key] ? [...typingUsers[key]] : [];
+  const bar=grab('typing-bar');
+  if(!users.length){ bar.classList.remove('visible'); return; }
+  grab('typing-who').textContent=users.length===1?users[0]+' is typing…':users.join(', ')+' are typing…';
+  bar.classList.add('visible');
+}
+function emitTyping(isTyping){
+  if(!realtimeSocket?.connected || !currentChat) return;
+  realtimeSocket.emit('typing:update',{type:currentChat.type,name:currentChat.name,isTyping});
+}
+function stopTyping(){
+  clearTimeout(typingTimer); typingTimer=null; emitTyping(false);
+  grab('typing-bar').classList.remove('visible');
 }
 
 const PREF = 'ss_prefs_v6';
@@ -857,7 +971,7 @@ function clearSession(){ try{ localStorage.removeItem(SESSION_KEY); }catch(e){} 
 /* ── PREFS ───────────────────────────────────────── */
 function savePrefs(){
   try{
-    const p={accent:currentAccent,wallpaper:currentWallpaper,opacity:grab('opacity-slider').value,dark:isDark,notifSound:notifSound,notifDesktop:notifDesktop};
+    const p={accent:currentAccent,wallpaper:currentWallpaper,opacity:grab('opacity-slider').value,dark:isDark,notifSound:notifSound,notifDesktop:notifDesktop,notifMentions:notifMentions,notifReplies:notifReplies};
     if(currentAccent==='custom'){p.ca=grab('pick-accent').value;p.cb=grab('pick-bg').value;p.cs=grab('pick-surface').value;}
     if(currentWallpaper==='custom'&&customBgDataUrl) p.customBg=customBgDataUrl;
     localStorage.setItem(PREF,JSON.stringify(p));
@@ -882,6 +996,8 @@ function loadPrefs(){
     else if(p.accent){ applyAccent(p.accent,true); }
     notifSound=p.notifSound!==false;
     notifDesktop=p.notifDesktop!==false;
+    notifMentions=p.notifMentions!==false;
+    notifReplies=p.notifReplies!==false;
   }catch(e){}
   try{ const u=localStorage.getItem('ss_unsent_'+(currentUser||'')); if(u) unsent=new Set(JSON.parse(u)); }catch(e){}
   try{ const r=localStorage.getItem('ss_rx_'+(currentUser||'')); if(r) reactions=JSON.parse(r); }catch(e){}
@@ -1195,7 +1311,7 @@ async function pollOtherChats(){
 function isEmoji(ch){ try{ return /\p{Emoji_Presentation}/u.test(ch); }catch{ return false; } }
 function renderMyGroups(gs){
   const el=grab('sb-groups');
-  if(!gs||!gs.length){ el.innerHTML='<div class="sb-empty">No groups yet — hit ＋ to create one!</div>'; return; }
+  if(!gs||!gs.length){ el.innerHTML='<div class="sb-empty">No groups yet — hit ＋ to create one!</div>'; updateNotificationUi(); return; }
   el.innerHTML='';
   gs.forEach(g=>{
     const item=document.createElement('div');
@@ -1208,6 +1324,7 @@ function renderMyGroups(gs){
       ${ub?'<div class="unread-badge">'+ub+'</div>':''}`;
     item.onclick=()=>openGroup(g); el.appendChild(item);
   });
+  updateNotificationUi();
 }
 function renderDiscover(gs){
   const el=grab('sb-discover');
@@ -1223,20 +1340,23 @@ function renderDiscover(gs){
 }
 function renderDMs(){
   const el=grab('sb-dms');
-  if(!activeDMs.length){ el.innerHTML='<div class="sb-empty">No DMs yet — hit ＋!</div>'; return; }
+  if(!activeDMs.length){ el.innerHTML='<div class="sb-empty">No DMs yet — hit ＋!</div>'; updateNotificationUi(); return; }
   el.innerHTML='';
   activeDMs.forEach(u=>{
     const item=document.createElement('div');
     item.className='sb-item'+(currentChat?.type==='dm'&&currentChat.name===u?' active':'');
     item.dataset.name=u; item.dataset.type='dm';
     const ub=unreadCounts['dm_'+u]||0;
-    item.innerHTML=`<div class="sb-av dm" style="position:relative">👤<span class="online-dot"></span></div>
-      <div class="sb-info"><div class="sb-name">${esc(u)}</div><div class="sb-sub">${ub?'<span class="sb-typing">new message!</span>':'Direct Message'}</div></div>
+    const isOnline=presenceByUser[u]?.status&&presenceByUser[u].status!=='offline';
+    const statusText=ub?'<span class="sb-typing">new message!</span>':presenceLabel(u);
+    item.innerHTML=`<div class="sb-av dm" style="position:relative">👤<span class="online-dot" style="background:${isOnline?'var(--online)':'var(--text3)'}"></span></div>
+      <div class="sb-info"><div class="sb-name">${esc(u)}</div><div class="sb-sub">${statusText}</div></div>
       ${ub?'<div class="unread-badge">'+ub+'</div>':''}
       <button class="sb-remove" title="Hide this DM">✕</button>`;
     item.querySelector('.sb-remove').onclick = (e) => { e.stopPropagation(); removeDM(u); };
     item.onclick=()=>openDM(u); el.appendChild(item);
   });
+  updateNotificationUi();
 }
 function filterSidebar(q){
   q=q.toLowerCase();
@@ -1263,8 +1383,10 @@ async function submitPasscode(){
   }catch(e){ grab('passcode-err').textContent='Server error.'; }
 }
 async function openGroup(name){
+  stopTyping();
   currentChat={type:'group',name}; lastMsgCount=0; clearInterval(pollTimer);
   delete unreadCounts[name];
+    updateNotificationUi();
   groupLastCounts[name]=0;
   showChat(); hiliteItem('group',name);
   if(!groupAdmins[name]){
@@ -1399,7 +1521,8 @@ function openInviteMemberModal(groupName){
 }
 function renderChatHeader(icon,name,sub,isGroup,isAdmin){
   grab('chat-header').style.display='flex';
-  grab('ch-icon').textContent=icon; grab('ch-name').textContent=name; grab('ch-sub').textContent=sub;
+  grab('ch-icon').textContent=icon; grab('ch-name').textContent=name;
+  grab('ch-sub').textContent=isGroup?sub:presenceLabel(name);
   const actions=grab('ch-actions'); actions.innerHTML='';
   if(isGroup){
     const mb=document.createElement('button'); mb.className='chat-action-btn'; mb.textContent='👥 Members';
@@ -1448,8 +1571,10 @@ async function clearDMChat(other){
 
 /* ── DM FLOW ─────────────────────────────────────── */
 function openDM(user){
+  stopTyping();
   currentChat={type:'dm',name:user}; lastMsgCount=0;
   delete unreadCounts['dm_'+user];
+    updateNotificationUi();
   dmLastCounts['dm_'+user]=0;
   if(!activeDMs.includes(user)){ activeDMs.push(user); saveDMs(); renderDMs(); }
   clearInterval(pollTimer); showChat(); hiliteItem('dm',user);
@@ -1510,6 +1635,7 @@ async function openDmModal(){
 async function sendMessage(){
   const inp=grab('msg-input'); let text=inp.value.trim();
   if(!text||!currentChat) return;
+  stopTyping();
   // Prepend reply quote
   if(replyTo){ text='[↩ '+replyTo.sender+': '+replyTo.text.substring(0,40)+']\n'+text; clearReply(); }
   inp.value=''; inp.style.height='auto';
@@ -1536,11 +1662,9 @@ function handleMsgKey(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); 
 function autoGrow(el){ el.style.height='auto'; el.style.height=Math.min(el.scrollHeight,110)+'px'; }
 function handleTyping(){
   const now=Date.now();
-  if(now-lastTypingMsg<1500) return;
-  lastTypingMsg=now;
-  // Show typing indicator for own typing (visual feedback)
+  if(now-lastTypingMsg>=1000) { emitTyping(true); lastTypingMsg=now; }
   clearTimeout(typingTimer);
-  typingTimer=setTimeout(()=>{},2000);
+  typingTimer=setTimeout(()=>emitTyping(false),2500);
 }
 
 /* ── CONTEXT MENU ────────────────────────────────── */
@@ -1791,6 +1915,7 @@ function renderMsgs(msgs){
 function showChat(){ grab('chat-welcome').style.display='none'; grab('chat-view').classList.add('visible'); }
 function resetChat(){
   clearInterval(pollTimer);
+  stopTyping();
   grab('chat-welcome').style.display=''; grab('chat-view').classList.remove('visible');
   grab('chat-header').style.display='none'; grab('pin-banner').classList.remove('has-pin');
   grab('search-bar').classList.remove('open'); clearReply();
@@ -1839,8 +1964,12 @@ function openSettings(tab){
     // Initialize notification checkboxes
     grab('notif-sound').checked=notifSound;
     grab('notif-desktop').checked=notifDesktop;
+    grab('notif-mentions').checked=notifMentions;
+    grab('notif-replies').checked=notifReplies;
     grab('notif-sound').addEventListener('change',(e)=>{ notifSound=e.target.checked; savePrefs(); toast(notifSound?'Sound notifications on 🔔':'Sound notifications off 🔇'); });
-    grab('notif-desktop').addEventListener('change',(e)=>{ notifDesktop=e.target.checked; savePrefs(); toast(notifDesktop?'Desktop notifications on 🔔':'Desktop notifications off 🔇'); });
+    grab('notif-desktop').addEventListener('change',(e)=>{ notifDesktop=e.target.checked; savePrefs(); if(notifDesktop) requestNotificationPermission(); toast(notifDesktop?'Desktop notifications on 🔔':'Desktop notifications off 🔇'); });
+    grab('notif-mentions').addEventListener('change',(e)=>{ notifMentions=e.target.checked; savePrefs(); });
+    grab('notif-replies').addEventListener('change',(e)=>{ notifReplies=e.target.checked; savePrefs(); });
   }
 }
 
