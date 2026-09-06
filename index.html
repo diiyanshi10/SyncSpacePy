@@ -396,6 +396,7 @@ input[type="color"] { width:32px; height:28px; border:none; border-radius:6px; c
 
 <!-- hidden file input for bg upload -->
 <input type="file" id="bg-file-input" accept="image/*" style="display:none" onchange="handleBgUpload(event)"/>
+<input type="file" id="avatar-file-input" accept="image/*" style="display:none" onchange="handleAvatarUpload(event)"/>
 <canvas id="color-canvas" style="display:none"></canvas>
 
 <!-- AUTH -->
@@ -425,6 +426,12 @@ input[type="color"] { width:32px; height:28px; border:none; border-radius:6px; c
         <div class="field"><label>Username</label>
           <input type="text" id="fp-user" placeholder="Your username" autocorrect="off" autocapitalize="none" onkeydown="if(event.key==='Enter'){event.preventDefault();doForgot()}"/></div>
         <button class="btn-primary" onclick="doForgot()">Send Reset Request →</button>
+        <div id="reset-fields" style="display:none;margin-top:12px">
+          <div class="field"><label>Reset Code</label><input type="text" id="fp-code" placeholder="6-digit code" inputmode="numeric" maxlength="6"/></div>
+          <div class="field"><label>New Password</label><input type="password" id="fp-newpass" placeholder="New password (min 4 chars)" autocomplete="new-password"/></div>
+          <div class="field"><label>Confirm Password</label><input type="password" id="fp-confpass" placeholder="Re-enter new password" autocomplete="new-password"/></div>
+          <button class="btn-primary" onclick="doResetPassword()">Reset Password →</button>
+        </div>
         <button class="btn-ghost" onclick="showLogin()" style="margin-top:8px">← Back to Sign In</button>
       </div>
       <div id="signup-form" style="display:none">
@@ -623,6 +630,20 @@ input[type="color"] { width:32px; height:28px; border:none; border-radius:6px; c
       <button onclick="closeModal('profile-modal')" style="font-size:1.1rem;color:var(--text2);line-height:1" aria-label="Close profile settings">✕</button>
     </div>
     <div id="profile-modal-desc" class="sr-only">Update your profile information including username, password, and notification preferences</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;padding:10px;background:var(--surf2);border-radius:var(--r)">
+      <div id="profile-avatar-preview" class="acct-av" style="width:52px;height:52px;font-size:1.1rem">?</div>
+      <div style="flex:1"><div style="font-size:.82rem;font-weight:800">Profile picture</div><div style="font-size:.72rem;color:var(--text2);margin-top:2px">JPG or PNG, resized locally</div></div>
+      <button class="btn-ghost" onclick="grab('avatar-file-input').click()" style="width:auto;margin:0;padding:7px 10px">Choose</button>
+    </div>
+    <div id="profile-upload-status" style="font-size:.76rem;color:var(--text2);margin:-6px 0 10px"></div>
+    <div class="field"><label>Full Name</label>
+      <input type="text" id="set-fullname" placeholder="Your full name" maxlength="120"/></div>
+    <div class="field"><label>Bio</label>
+      <textarea id="set-bio" rows="2" placeholder="A short introduction" maxlength="255" style="display:block;width:100%;padding:10px 12px;background:var(--surf2);border:1.5px solid var(--border);border-radius:var(--r);font-size:.88rem;color:var(--text);outline:none;resize:vertical"></textarea></div>
+    <div class="field"><label>Status Message</label>
+      <input type="text" id="set-status" placeholder="What are you up to?" maxlength="120"/></div>
+    <div id="set-profile-err" class="modal-error"></div>
+    <button class="btn-primary" onclick="doUpdateProfile()" style="margin-top:4px">Save Profile →</button>
     <div class="field"><label>Display Username</label>
       <input type="text" id="set-uname" placeholder="New username" autocorrect="off" autocapitalize="none" spellcheck="false"/></div>
     <div id="set-uname-err" class="modal-error"></div>
@@ -637,6 +658,11 @@ input[type="color"] { width:32px; height:28px; border:none; border-radius:6px; c
       <input type="password" id="set-confpass" placeholder="Re-enter new password"/></div>
     <div id="set-pass-err" class="modal-error"></div>
     <button class="btn-primary" onclick="doChangePassword()" style="margin-top:4px">Change Password →</button>
+
+    <div style="font-size:.8rem;font-weight:800;margin-bottom:10px;margin-top:20px;color:var(--danger)">⚠️ Account</div>
+    <div class="field"><label>Confirm Password to Deactivate</label>
+      <input type="password" id="deactivate-pass" placeholder="Your current password"/></div>
+    <button class="btn-ghost" onclick="deactivateAccount()" style="color:var(--danger);border-color:var(--danger)">Deactivate Account</button>
     
     <div style="font-size:.8rem;font-weight:800;margin-bottom:10px;margin-top:20px">🔔 Notifications</div>
     <div style="margin-bottom:12px;padding:10px;background:var(--surf2);border-radius:var(--r)">
@@ -798,6 +824,7 @@ const html = document.documentElement;
 const body = document.body;
 
 let currentUser = null, currentChat = null, pendingGroup = null;
+let currentProfile = {full_name:'', avatar:'', bio:'', status_message:''};
 let pollTimer = null, activeDMs = [], sidebarOpen = true;
 let realtimeSocket = null;
 let myGroups = []; // persisted list of joined groups
@@ -1166,15 +1193,33 @@ function showAuthOk(msg){  grab('auth-success').textContent=msg; grab('auth-succ
 function clearAuth(){ grab('auth-error').style.display='none'; grab('auth-success').style.display='none'; }
 function showSignup(){ grab('login-form').style.display='none'; grab('signup-form').style.display='block'; grab('forgot-form').style.display='none'; clearAuth(); setTimeout(()=>grab('su-user').focus(),60); }
 function showLogin(){  grab('signup-form').style.display='none'; grab('login-form').style.display='block'; grab('forgot-form').style.display='none'; clearAuth(); setTimeout(()=>grab('login-user').focus(),60); }
-function showForgot(){ grab('login-form').style.display='none'; grab('signup-form').style.display='none'; grab('forgot-form').style.display='block'; clearAuth(); setTimeout(()=>grab('fp-user').focus(),60); }
+function showForgot(){ grab('login-form').style.display='none'; grab('signup-form').style.display='none'; grab('forgot-form').style.display='block'; grab('reset-fields').style.display='none'; clearAuth(); setTimeout(()=>grab('fp-user').focus(),60); }
 async function doForgot(){
   const u=grab('fp-user').value.trim(); clearAuth();
   if(!u){ showAuthErr('Please enter your username.'); return; }
   try{
     const r=await fetch('/forgotpassword',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'username='+encodeURIComponent(u)});
     const d=await r.json();
-    if(d.status==='success') showAuthOk('✅ Request sent! The server host has been notified. They will share your new password.');
+    if(d.status==='success'){
+      grab('reset-fields').style.display='block';
+      grab('fp-code').value=d.resetCode||'';
+      showAuthOk('✅ Reset code created. It expires in 15 minutes.');
+    }
     else showAuthErr(d.message||'Username not found.');
+  }catch(e){ showAuthErr('Cannot reach server.'); }
+}
+async function doResetPassword(){
+  const username=grab('fp-user').value.trim(), code=grab('fp-code').value.trim(), password=grab('fp-newpass').value, confirmPassword=grab('fp-confpass').value;
+  clearAuth();
+  if(!code||!password||!confirmPassword){ showAuthErr('Fill in all reset fields.'); return; }
+  if(password.length<4){ showAuthErr('Password must be at least 4 characters.'); return; }
+  if(password!==confirmPassword){ showAuthErr('Passwords do not match.'); return; }
+  try{
+    const body='username='+encodeURIComponent(username)+'&code='+encodeURIComponent(code)+'&newPassword='+encodeURIComponent(password);
+    const r=await fetch('/resetpassword',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    const d=await r.json();
+    if(d.status==='success'){ showAuthOk('✅ Password reset. You can sign in now.'); setTimeout(showLogin,900); }
+    else showAuthErr(d.message||'Invalid or expired reset code.');
   }catch(e){ showAuthErr('Cannot reach server.'); }
 }
 
@@ -1212,6 +1257,7 @@ function enterApp(){
   grab('acct-uname').textContent=currentUser;
   grab('ad-hdr-name').textContent=currentUser;
   grab('welcome-h').textContent='Hey, '+currentUser+'! 👋';
+  loadProfile();
   loadSidebar();
 }
 function doLogout(){
@@ -1946,6 +1992,7 @@ window.addEventListener('load',()=>{
     grab('acct-uname').textContent=currentUser;
     grab('ad-hdr-name').textContent=currentUser;
     grab('welcome-h').textContent='Hey, '+currentUser+'! 👋';
+    loadProfile();
     loadSidebar();
   } else {
     loadPrefs(); // load theme prefs even before login
@@ -1961,6 +2008,7 @@ function openSettings(tab){
     openModal('theme-modal');
   } else if(tab === 'profile'){
     openModal('profile-modal');
+    loadProfile();
     // Initialize notification checkboxes
     grab('notif-sound').checked=notifSound;
     grab('notif-desktop').checked=notifDesktop;
@@ -1971,6 +2019,81 @@ function openSettings(tab){
     grab('notif-mentions').addEventListener('change',(e)=>{ notifMentions=e.target.checked; savePrefs(); });
     grab('notif-replies').addEventListener('change',(e)=>{ notifReplies=e.target.checked; savePrefs(); });
   }
+}
+
+function applyProfile(profile){
+  currentProfile=profile||currentProfile;
+  const displayName=currentProfile.full_name||currentUser;
+  const accountName=grab('acct-uname'), headerName=grab('ad-hdr-name'), headerStatus=grab('ad-hdr-sub');
+  if(accountName) accountName.textContent=displayName;
+  if(headerName) headerName.textContent=displayName;
+  if(headerStatus) headerStatus.textContent=currentProfile.status_message||'SyncSpace Member';
+  const avatar=grab('acct-av'), preview=grab('profile-avatar-preview');
+  [avatar,preview].forEach(el=>{
+    if(!el) return;
+    if(currentProfile.avatar){ el.textContent=''; el.style.backgroundImage='url("'+currentProfile.avatar.replace(/"/g,'%22')+'")'; el.style.backgroundSize='cover'; el.style.backgroundPosition='center'; }
+    else { el.style.backgroundImage=''; el.textContent=currentUser?currentUser.charAt(0).toUpperCase():'?'; }
+  });
+}
+async function loadProfile(){
+  try{
+    const r=await fetch('/profile?username='+encodeURIComponent(currentUser));
+    if(!r.ok) return;
+    const p=await r.json();
+    if(grab('set-fullname')) grab('set-fullname').value=p.full_name||'';
+    if(grab('set-bio')) grab('set-bio').value=p.bio||'';
+    if(grab('set-status')) grab('set-status').value=p.status_message||'';
+    applyProfile(p);
+  }catch(e){ console.error('loadProfile',e); }
+}
+function handleAvatarUpload(event){
+  const file=event.target.files?.[0];
+  if(!file) return;
+  const status=grab('profile-upload-status');
+  const setStatus=(message,failed=false)=>{ if(status){ status.textContent=message; status.style.color=failed?'var(--danger)':'var(--text2)'; } };
+  setStatus('Reading image…');
+  if(!file.type.startsWith('image/')){ setStatus('Please choose an image file.',true); toast('Please choose an image file.'); event.target.value=''; return; }
+  if(file.size>15*1024*1024){ setStatus('Image is too large. Choose an image under 15 MB.',true); toast('Image is too large. Choose an image under 15 MB.'); event.target.value=''; return; }
+  const reader=new FileReader();
+  reader.onerror=()=>{ setStatus('Could not read that image. Please try another file.',true); toast('Could not read that image. Please try another file.'); };
+  reader.onload=()=>{
+    const image=new Image();
+    image.onerror=()=>{ setStatus('That image could not be decoded. Please use JPG or PNG.',true); toast('That image could not be decoded. Please use JPG or PNG.'); };
+    image.onload=()=>{
+      const size=256, scale=Math.min(size/image.width,size/image.height,1);
+      const canvas=document.createElement('canvas'); canvas.width=Math.max(1,Math.round(image.width*scale)); canvas.height=Math.max(1,Math.round(image.height*scale));
+      const context=canvas.getContext('2d');
+      if(!context){ setStatus('Image processing is unavailable in this browser.',true); toast('Image processing is unavailable in this browser.'); return; }
+      context.drawImage(image,0,0,canvas.width,canvas.height);
+      currentProfile.avatar=canvas.toDataURL('image/jpeg',.82); applyProfile(currentProfile);
+      setStatus('Profile picture ready. Click Save Profile.');
+      toast('Profile picture ready. Click Save Profile.');
+    };
+    image.src=reader.result;
+  };
+  reader.readAsDataURL(file);
+  event.target.value='';
+}
+async function doUpdateProfile(){
+  const err=grab('set-profile-err'); err.textContent='';
+  const body='username='+encodeURIComponent(currentUser)+'&fullName='+encodeURIComponent(grab('set-fullname').value.trim())+'&avatar='+encodeURIComponent(currentProfile.avatar||'')+'&bio='+encodeURIComponent(grab('set-bio').value.trim())+'&statusMessage='+encodeURIComponent(grab('set-status').value.trim());
+  try{
+    const r=await fetch('/profile',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body});
+    const d=await r.json();
+    if(d.status==='success'){ await loadProfile(); toast('Profile updated ✓'); }
+    else err.textContent=d.message||'Profile update failed.';
+  }catch(e){ err.textContent='Server error.'; }
+}
+async function deactivateAccount(){
+  const password=grab('deactivate-pass').value;
+  if(!password){ toast('Enter your password to deactivate the account.'); return; }
+  if(!confirm('Deactivate your account? You will be signed out and cannot log in until it is reactivated.')) return;
+  try{
+    const r=await fetch('/deactivate',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'username='+encodeURIComponent(currentUser)+'&password='+encodeURIComponent(password)});
+    const d=await r.json();
+    if(d.status==='success'){ closeModal('profile-modal'); toast('Account deactivated.'); doLogout(); }
+    else toast(d.message||'Could not deactivate account.');
+  }catch(e){ toast('Server error while deactivating account.'); }
 }
 
 async function doChangeUsername(){

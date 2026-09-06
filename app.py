@@ -142,6 +142,78 @@ def signup():
     return fail("Username already taken", 409)
 
 
+@app.route("/profile", methods=["GET", "POST", "OPTIONS"])
+def profile():
+    if request.method == "OPTIONS":
+        return "", 204
+
+    username = query("username") if request.method == "GET" else form("username")
+    if not username:
+        return fail("Missing username")
+
+    if request.method == "GET":
+        data = user_dao.get_profile(username)
+        if not data or not data.get("is_active"):
+            return fail("Profile not found", 404)
+        data.pop("is_active", None)
+        return jsonify(data)
+
+    full_name = form("fullName")[:120]
+    avatar = form("avatar")
+    bio = form("bio")[:255]
+    status_message = form("statusMessage")[:120]
+    if avatar and not avatar.startswith("data:image/"):
+        return fail("Invalid profile picture format")
+    if len(avatar) > 1_500_000:
+        return fail("Profile picture is too large")
+    if user_dao.update_profile(username, full_name, avatar, bio, status_message):
+        return ok()
+    return fail("Profile update failed", 404)
+
+
+@app.route("/forgotpassword", methods=["POST", "OPTIONS"])
+def forgot_password():
+    if request.method == "OPTIONS":
+        return "", 204
+    username = form("username")
+    if not username:
+        return fail("Missing username")
+    code = user_dao.create_reset_code(username)
+    if not code:
+        return fail("Username not found", 404)
+    print(f"[PASSWORD RESET] username={username} code={code} (expires in 15 minutes)")
+    return ok({"resetCode": code})
+
+
+@app.route("/resetpassword", methods=["POST", "OPTIONS"])
+def reset_password():
+    if request.method == "OPTIONS":
+        return "", 204
+    username = form("username")
+    code = form("code")
+    new_password = form("newPassword")
+    if not username or not code or not new_password:
+        return fail("All fields are required")
+    if len(new_password) < 4:
+        return fail("Password too short")
+    if user_dao.reset_password(username, code, new_password):
+        return ok()
+    return fail("Invalid or expired reset code", 401)
+
+
+@app.route("/deactivate", methods=["POST", "OPTIONS"])
+def deactivate():
+    if request.method == "OPTIONS":
+        return "", 204
+    username = form("username")
+    password = form("password")
+    if not username or not password:
+        return fail("Username and password are required")
+    if user_dao.deactivate_account(username, password):
+        return ok()
+    return fail("Incorrect password or account unavailable", 401)
+
+
 # ================================================================
 # POST /changeusername
 # ================================================================
