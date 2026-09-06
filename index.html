@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
 <title>SyncSpace</title>
+<script async src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Pacifico&family=Playfair+Display:wght@700;900&family=Nunito:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <style>
 .logo-sync  { font-family:'Pacifico',cursive; font-weight:400; font-style:normal; letter-spacing:0; margin-right:0; }
@@ -786,6 +787,7 @@ const body = document.body;
 
 let currentUser = null, currentChat = null, pendingGroup = null;
 let pollTimer = null, activeDMs = [], sidebarOpen = true;
+let realtimeSocket = null;
 let myGroups = []; // persisted list of joined groups
 let isDark = false, currentAccent = 'autumn', currentWallpaper = 'none', customBgDataUrl = null;
 let lastMsgCount = 0, groupAdmins = {};
@@ -800,6 +802,35 @@ let dmLastCounts = {};
 let dmContactsLastId = {};
 let removedDMs = {}; // { user: lastIdAtRemoval }
 const QUICK_EMOJIS = ['❤️','😂','👍','😮','😢','🔥','🎉','👀'];
+
+function setupRealtime(){
+  if(realtimeSocket || typeof io !== 'function') return;
+  realtimeSocket = io();
+  realtimeSocket.on('connect',()=>{ if(currentUser) joinRealtimeSession(); });
+  realtimeSocket.on('message:new', handleRealtimeMessage);
+}
+function joinRealtimeSession(){
+  if(!realtimeSocket?.connected || !currentUser) return;
+  realtimeSocket.emit('session:join',{username:currentUser});
+  myGroups.forEach(group=>realtimeSocket.emit('chat:join',{type:'group',name:group}));
+}
+function joinRealtimeChat(type,name){
+  if(realtimeSocket?.connected) realtimeSocket.emit('chat:join',{type,name});
+}
+function handleRealtimeMessage(data){
+  if(!currentUser || !data) return;
+  if(data.type==='group'){
+    if(currentChat?.type==='group' && currentChat.name===data.group) fetchGMsgs();
+    else { unreadCounts[data.group]=(unreadCounts[data.group]||0)+1; renderMyGroups(myGroups); beep(); }
+    return;
+  }
+  if(data.type==='dm'){
+    const other=data.sender===currentUser?data.receiver:data.sender;
+    if(!activeDMs.includes(other)){ activeDMs.push(other); saveDMs(); }
+    if(currentChat?.type==='dm' && currentChat.name===other) fetchDMsgs();
+    else { const key='dm_'+other; unreadCounts[key]=(unreadCounts[key]||0)+1; renderDMs(); beep(); }
+  }
+}
 
 const PREF = 'ss_prefs_v6';
 const SESSION_KEY = 'ss_session';
@@ -1060,6 +1091,7 @@ async function doSignup(){
 function enterApp(){
   grab('auth-screen').style.display='none';
   grab('app-screen').classList.add('open');
+  setupRealtime();
   grab('acct-av').textContent=currentUser.charAt(0).toUpperCase();
   grab('acct-uname').textContent=currentUser;
   grab('ad-hdr-name').textContent=currentUser;
@@ -1068,6 +1100,7 @@ function enterApp(){
 }
 function doLogout(){
   clearInterval(pollTimer);
+  if(realtimeSocket){ realtimeSocket.disconnect(); realtimeSocket=null; }
   currentUser=null; currentChat=null; activeDMs=[]; lastMsgCount=0; groupAdmins={}; unreadCounts={};
   clearSession(); closeAcct();
   grab('app-screen').classList.remove('open');
@@ -1086,6 +1119,7 @@ async function loadSidebar(){
     myGroups=await rMine.json(); const allGroups=await rAll.json();
     renderMyGroups(myGroups);
     renderDiscover(allGroups.filter(g=>!myGroups.includes(g)));
+    joinRealtimeSession();
 
     const rc=await fetch('/contacts?username='+encodeURIComponent(currentUser));
     if(rc.ok){
@@ -1238,7 +1272,8 @@ async function openGroup(name){
   }
   renderChatHeader('🏠',name,'Group Chat',true,groupAdmins[name]===currentUser);
   updatePinBanner(name);
-  fetchGMsgs(); pollTimer=setInterval(()=>{ fetchGMsgs(); },2000);
+  joinRealtimeChat('group',name);
+  fetchGMsgs(); pollTimer=setInterval(()=>{ fetchGMsgs(); },30000);
 }
 async function fetchGMsgs(){
   if(!currentChat||currentChat.type!=='group') return;
@@ -1420,7 +1455,7 @@ function openDM(user){
   clearInterval(pollTimer); showChat(); hiliteItem('dm',user);
   renderChatHeader('👤',user,'Direct Message',false,false);
   updatePinBanner('dm_'+user);
-  fetchDMsgs(); pollTimer=setInterval(fetchDMsgs,2000);
+  fetchDMsgs(); pollTimer=setInterval(fetchDMsgs,30000);
 }
 
 function removeDM(user){
@@ -1773,6 +1808,8 @@ function hiliteItem(type,name){
 
 /* ── INIT ────────────────────────────────────────── */
 window.addEventListener('load',()=>{
+  setupRealtime();
+  setTimeout(setupRealtime,1000);
   // Try auto-login from saved session
   const saved=loadSession();
   if(saved){

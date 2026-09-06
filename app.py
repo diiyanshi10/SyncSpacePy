@@ -34,6 +34,7 @@ import os
 import socket
 
 from flask import Flask, request, jsonify, send_from_directory, Response
+from flask_socketio import SocketIO, join_room, leave_room
 
 import db
 from dao import group_dao, message_dao, private_message_dao, reaction_dao, user_dao
@@ -41,6 +42,7 @@ from dao import group_dao, message_dao, private_message_dao, reaction_dao, user_
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__, static_folder=None)
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode="threading")
 
 
 # ================================================================
@@ -285,6 +287,11 @@ def send():
         return fail("Missing fields")
 
     message_dao.save_message(group, username, message)
+    socketio.emit(
+        "message:new",
+        {"type": "group", "group": group, "sender": username, "message": message},
+        to=f"group:{group}",
+    )
     return ok()
 
 
@@ -370,7 +377,33 @@ def send_private():
         return fail("Missing fields")
 
     private_message_dao.save_private_message(sender, receiver, message)
+    payload = {"type": "dm", "sender": sender, "receiver": receiver, "message": message}
+    socketio.emit("message:new", payload, to=f"user:{sender}")
+    socketio.emit("message:new", payload, to=f"user:{receiver}")
     return ok()
+
+
+@socketio.on("session:join")
+def socket_session_join(data):
+    username = (data or {}).get("username", "").strip()
+    if username:
+        join_room(f"user:{username}")
+
+
+@socketio.on("chat:join")
+def socket_chat_join(data):
+    chat_type = (data or {}).get("type")
+    name = (data or {}).get("name", "").strip()
+    if chat_type == "group" and name:
+        join_room(f"group:{name}")
+
+
+@socketio.on("chat:leave")
+def socket_chat_leave(data):
+    chat_type = (data or {}).get("type")
+    name = (data or {}).get("name", "").strip()
+    if chat_type == "group" and name:
+        leave_room(f"group:{name}")
 
 
 # ================================================================
@@ -567,4 +600,4 @@ if __name__ == "__main__":
     _print_banner()
     # threaded=True mirrors the Java version's fixed thread pool of 20,
     # allowing multiple concurrent requests to be handled.
-    app.run(host="0.0.0.0", port=8080, threaded=True)
+    socketio.run(app, host="0.0.0.0", port=8080, allow_unsafe_werkzeug=True)
